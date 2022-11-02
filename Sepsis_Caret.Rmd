@@ -1,0 +1,113 @@
+---
+title: "TFM Detección Sepsis"
+author: "David del Pozo Granados"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float:
+      collapsed: no
+    number_sections: yes
+    theme: cosmo
+---
+## Lectura de datos
+
+En primer lugar cargaremos la libería caret y borraremos los que tengamos actualmente en el espacio de trabajo. Posteriormente, leeremos los datos de entrenamiento, test y validación que hemos convertido de Pkl a Csv para poder tratarlos con el paquete caret
+
+```{r}
+library(caret)
+rm(list = ls())
+```
+
+```{r}
+
+test_data <- read.csv("csv_data/linear_interpolation/test_data_ML.csv")
+train_data <- read.csv("csv_data/linear_interpolation/train_data_ML.csv")
+val_data <- read.csv("csv_data/linear_interpolation/val_data_ML.csv")
+
+test_data_eti <- read.csv("csv_data/linear_interpolation/test_data_etiqueta.csv")
+train_data_eti <- read.csv("csv_data/linear_interpolation/train_data_etiqueta.csv")
+val_data_eti <- read.csv("csv_data/linear_interpolation/val_data_etiqueta.csv")
+
+```
+
+Quitaremos la primera columna de cada conjunto de datos, puesto que es simplemente un identificador del paciente que no nos ofrece información relevantes para el entrenamiento de los modelos
+
+```{r}
+test_data <- test_data[,-1]
+train_data <- train_data[,-1]
+val_data <- val_data[,-1]
+
+test_data_eti <- test_data_eti[,-1]
+train_data_eti <- train_data_eti[,-1]
+val_data_eti <- val_data_eti[,-1]
+```
+
+Factorizamos las etiquetas que indican con un 1 si el paciente finalmente se le detectó sepsis o con un 0 en caso contrario
+
+```{r}
+test_data_eti<-factor(test_data_eti)
+train_data_eti<-factor(train_data_eti)
+val_data_eti<-factor(val_data_eti)
+```
+
+Creamos una función de control con los siguientes parámetros:
+- **Método**: validación cruzada 
+- **Tamaño fold**: 10
+- **Guardar predicciones**: TRUE
+- **Modo Verbose**: FALSE
+- Finalmente, el parámetro summaryFunction y classProbs deben indicar que queremos calcular curvas ROC y para ello nuestro modelo debe proporcionar no solo predicción de clase sino probabilidad de la predicción:
+  - **summaryFunction** = twoClassSummary,
+  - **classProbs** = TRUE
+
+```{r}
+Control_class <- trainControl(
+  method = "cv",
+  number = 10
+)
+```
+
+```{r}
+Control_class2 <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5
+)
+```
+
+
+Probamos el algoritmo clásico de Machine Learning llamado Vecinos KNN:
+
+```{r}
+mod_knn <- train(train_data_eti~ .,
+                 train_data,
+                 method = "knn",
+                 trControl = Control_class)
+```
+
+Se irá añadiendo a una lista los distintos modelos que hemos ido entrenando y estos se pasarán por un remuestreo con la función resamples.
+
+```{r}
+Modelos_Entrenados <- list(
+   knn = mod_knn)
+
+
+resamples <- resamples(Modelos_Entrenados)
+
+```
+
+Mostramos gráficamente los modelos y los compararemos para ver de manera visual cual es el mejor modelo de predicción temprana de sepsis para este conjunto de datos.
+
+
+```{r}
+
+summary(resamples, metric="ROC")
+
+
+bwplot(resamples, metric = "ROC")
+dotplot(resamples, metric="ROC")
+
+
+```
