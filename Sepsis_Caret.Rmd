@@ -16,6 +16,7 @@ output:
 
 En primer lugar cargaremos la libería caret y borraremos los que tengamos actualmente en el espacio de trabajo. Posteriormente, leeremos los datos de entrenamiento, test y validación que hemos convertido de Pkl a Csv para poder tratarlos con el paquete caret
 
+
 ```{r}
 library(caret)
 rm(list = ls())
@@ -33,25 +34,59 @@ val_data_eti <- read.csv("csv_data/linear_interpolation/val_data_etiqueta.csv")
 
 ```
 
-Quitaremos la primera columna de cada conjunto de datos, puesto que es simplemente un identificador del paciente que no nos ofrece información relevantes para el entrenamiento de los modelos
+En este procesamiento elegimos el subconjunto de datos que queremos usar en función del número de horas. Si elegimos por ejemplo 3 horas, tendremos 4 tomas de datos para cada una de las 44 medidas (3 horas + onset)
 
 ```{r}
+
+n_horas <- 3 #Elegimos el número de horas antes de onset que elegimos.
+j<-0
+valores <- c()
+i<-0
+
+while(i<44){
+  valores_aux <- c(j:(j+n_horas))
+  valores <- c(valores,valores_aux)
+  valores_aux <- c()
+  j <- j +49
+  i <- i+1
+}
+valores <- valores +1
+```
+
+
+Quitaremos la primera columna de cada conjunto de datos, puesto que es simplemente un identificador del paciente que no nos ofrece información relevantes para el entrenamiento de los modelos. Posteriormente también quitaremos las medidas para las horas que no queremos, es decir, desde la hora posterior elegida en n_horas hasta 49.
+
+```{r}
+
 test_data <- test_data[,-1]
+test_data <- test_data[,valores]
+
 train_data <- train_data[,-1]
+train_data <- train_data[,valores]
+
 val_data <- val_data[,-1]
+val_data <- val_data[,valores]
+
+
 
 test_data_eti <- test_data_eti[,-1]
 train_data_eti <- train_data_eti[,-1]
 val_data_eti <- val_data_eti[,-1]
 ```
 
-Factorizamos las etiquetas que indican con un 1 si el paciente finalmente se le detectó sepsis o con un 0 en caso contrario
+Añadimos las etiquetas al conjunto de datos de entrenamiento y  factorizamos las etiquetas que indican con un 1 si el paciente finalmente se le detectó sepsis o con un 0 en caso contrario.
 
 ```{r}
-test_data_eti<-factor(test_data_eti)
-train_data_eti<-factor(train_data_eti)
-val_data_eti<-factor(val_data_eti)
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(0,1),labels=c("NO","SI"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(0,1),labels=c("NO","SI"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(0,1),labels=c("NO","SI"))
+
 ```
+
 
 Creamos una función de control con los siguientes parámetros:
 - **Método**: validación cruzada 
@@ -65,49 +100,158 @@ Creamos una función de control con los siguientes parámetros:
 ```{r}
 Control_class <- trainControl(
   method = "cv",
-  number = 10
-)
-```
-
-```{r}
-Control_class2 <- trainControl(
-  method = "repeatedcv",
   number = 10,
-  repeats = 5
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE, # IMPORTANT!
+  savePredictions = TRUE,
+  verbose = FALSE
 )
 ```
 
 
-Probamos el algoritmo clásico de Machine Learning llamado Vecinos KNN:
+Entrenamos los distintos modelos basados en algoritmos de clasificación que hemos seleccionado y que nos ofrece el paquete caret:
+
+- **KNN**
+- **GLMNET_TUNING**
+- **GLMBOOST**
+- **RPART**
+- **CTREE2**
+- **NAIVE BAYES**
+
 
 ```{r}
-mod_knn <- train(train_data_eti~ .,
-                 train_data,
+
+#ENTRENAMOS MODELO KNN
+
+mod_knn <- train(train_data_eti~.,
+                 data = train_data,
                  method = "knn",
+                 preProcess = c("center","scale"),
+                 tuneLength = 20,
                  trControl = Control_class)
+
+#ENTRENAMOS MODELO GLMNET_TUNING
+
+ mod_glmnet_tuning <- train(
+   train_data_eti~.,
+  data = train_data,
+   tuneGrid = expand.grid(alpha = 0:1,
+                         lambda = seq(0.0001, 1, length = 20)),
+   method = "glmnet",
+   trControl = Control_class)
+
+#ENTRENAMOS MODELO GLMBOOST
+ 
+mod_glmboost <- train(   train_data_eti~.,
+                            data = train_data,
+                             method = "glmboost", 
+                             trControl = Control_class)
+
+#ENTRENAMOS MODELO RPART
+
+mod_rpart <- train(   train_data_eti~.,
+                            data = train_data,
+                             method = "rpart", 
+                             trControl = Control_class)
+
+#ENTRENAMOS MODELO CTREE2
+
+ mod_ctree2<- train(   train_data_eti~.,
+                            data = train_data,
+                             method = "ctree2", 
+                             trControl = Control_class)
+
+ #ENTRENAMOS MODELO NAIVE BAYES
+
+mod_nb <- train(   train_data_eti~.,
+                            data = train_data,
+                             method = "naive_bayes", 
+                             trControl = Control_class)
+
+
+#ENTRENAMOS MODELO XGBTree - DE MOMENTO NO LO EJECUTAMOS
+#mod_xgbTree <- train(   train_data_eti~.,
+#                            data = train_data,
+#                             method = "xgbTree", 
+#                             trControl = Control_class)
+
+#ENTRENAMOS MODELO svmLinearWeights2 - DE MOMENTO NO LO EJECUTAMOS
+
+#mod_svmLinearWeights2 <- train(   train_data_eti~.,
+#                            data = train_data,
+#                             method = "svmLinearWeights2", 
+#                             trControl = Control_class)
+
+
+#ENTRENAMOS MODELO BSTTree- DE MOMENTO NO LO EJECUTAMOS
+
+#mod_bstTree <- train(   train_data_eti~.,
+#                            data = train_data,
+#                             method = "bstTree", 
+#                             trControl = Control_class)
+ 
 ```
+
+
+
 
 Se irá añadiendo a una lista los distintos modelos que hemos ido entrenando y estos se pasarán por un remuestreo con la función resamples.
 
 ```{r}
 Modelos_Entrenados <- list(
-   knn = mod_knn)
+   knn = mod_knn,
+   glmnet = mod_glmnet_tuning,
+   glmboost = mod_glmboost,
+   rpart = mod_rpart,
+   ctree2 = mod_ctree2,
+   naive_bayes = mod_nb
+   #xgbTree = mod_xgbTree,
+   #svmLinearWeights2 = mod_svmLinearWeights2,
+   #bstTree = mod_bstTree
+   )
 
 
 resamples <- resamples(Modelos_Entrenados)
 
 ```
 
-Mostramos gráficamente los modelos y los compararemos para ver de manera visual cual es el mejor modelo de predicción temprana de sepsis para este conjunto de datos.
-
+Haremos una predicción de los modelos anteriormente entrenados, usando el conjunto de datos de validación para calculara la precisión de los modelos (Accuracy):
 
 ```{r}
 
-summary(resamples, metric="ROC")
+#Accuracy para modelo knn
+knn_pred <- predict(mod_knn, test_data)
+postResample(pred = knn_pred, obs = test_data$test_data_eti)
+
+#Accuracy para modelo glmnet_tuning
+glmnet_tuning_pred <- predict(mod_glmnet_tuning, test_data)
+postResample(pred = glmnet_tuning_pred, obs = test_data$test_data_eti)
+
+#Accuracy para modelo glmboost
+glmboost_pred <- predict(mod_glmboost, test_data)
+postResample(pred = glmboost_pred, obs = test_data$test_data_eti)
+
+#Accuracy para modelo rpart
+rpart_pred <- predict(mod_rpart, test_data)
+postResample(pred = rpart_pred, obs = test_data$test_data_eti)
+
+#Accuracy para modelo ctree2
+ctree2_pred <- predict(mod_ctree2, test_data)
+postResample(pred = ctree2_pred, obs = test_data$test_data_eti)
+
+#Accuracy para modelo nb
+nb_pred <- predict(mod_nb, test_data)
+postResample(pred = nb_pred, obs = test_data$test_data_eti)
 
 
-bwplot(resamples, metric = "ROC")
-dotplot(resamples, metric="ROC")
+```
+Mostramos gráficamente los modelos y los compararemos para ver de manera visual cual es el mejor modelo de predicción temprana de sepsis para este conjunto de datos. Con el siguiente código mostraremos el área bajo la curva ROC, la sensibilidiad y la especificidad.
+
+```{r}
+
+summary(resamples)
+bwplot(resamples)
+dotplot(resamples)
 
 
 ```
