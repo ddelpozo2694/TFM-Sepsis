@@ -16,11 +16,24 @@ output:
 
 En primer lugar cargaremos la libería caret y borraremos los que tengamos actualmente en el espacio de trabajo. Posteriormente, leeremos los datos de entrenamiento, test y validación que hemos convertido de Pkl a Csv para poder tratarlos con el paquete caret
 
+```{r}
+rm(list = ls())
+```
+
 
 ```{r}
 library(caret)
-rm(list = ls())
 ```
+
+
+```{r}
+library(dplyr) # for data manipulation
+library(caret) # for model-building
+library(purrr) # for functional programming (map)
+library(pROC) # for AUC calculations
+library(PRROC) # for Precision-Recall curve calculations
+```
+
 
 ```{r}
 
@@ -38,7 +51,7 @@ En este procesamiento elegimos el subconjunto de datos que queremos usar en func
 
 ```{r}
 
-n_horas <- 3 #Elegimos el número de horas antes de onset que elegimos.
+n_horas <- 24 #Elegimos el número de horas antes de onset que elegimos.
 j<-0
 valores <- c()
 i<-0
@@ -81,12 +94,47 @@ train_data<- cbind(train_data,train_data_eti)
 test_data<- cbind(test_data,test_data_eti)
 val_data<- cbind(val_data,val_data_eti)
 
-test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(0,1),labels=c("NO","SI"))
-train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(0,1),labels=c("NO","SI"))
-val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(0,1),labels=c("NO","SI"))
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
 
 ```
 
+Sacamos cuantos pacientes tienen o no Sepsis en nuestros tres conjuntos de datos:
+
+**Conjunto de datos de entrenamiento**
+
+```{r}
+# Valor entero
+table(train_data$train_data_eti)
+
+# Valor porcentual
+prop.table(table(train_data$train_data_eti))
+
+```
+
+**Conjunto de datos de test**
+
+```{r}
+# Valor entero
+table(test_data$test_data_eti)
+
+# Valor porcentual
+prop.table(table(test_data$test_data_eti))
+
+```
+
+
+**Conjunto de datos de validación**
+
+```{r}
+# Valor entero
+table(val_data$val_data_eti)
+
+# Valor porcentual
+prop.table(table(val_data$val_data_eti))
+
+```
 
 Creamos una función de control con los siguientes parámetros:
 - **Método**: validación cruzada 
@@ -98,14 +146,11 @@ Creamos una función de control con los siguientes parámetros:
   - **classProbs** = TRUE
 
 ```{r}
-Control_class <- trainControl(
-  method = "cv",
-  number = 10,
-  summaryFunction = twoClassSummary,
-  classProbs = TRUE, # IMPORTANT!
-  savePredictions = TRUE,
-  verbose = FALSE
-)
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
 ```
 
 
@@ -118,81 +163,131 @@ Entrenamos los distintos modelos basados en algoritmos de clasificación que hem
 - **CTREE2**
 - **NAIVE BAYES**
 
-
 ```{r}
-
 #ENTRENAMOS MODELO KNN
 
 mod_knn <- train(train_data_eti~.,
                  data = train_data,
                  method = "knn",
-                 preProcess = c("center","scale"),
-                 tuneLength = 20,
-                 trControl = Control_class)
+                  trControl = ctrl)
 
-#ENTRENAMOS MODELO GLMNET_TUNING
+save(mod_knn, file="mod_knn.RData")
+```
 
- mod_glmnet_tuning <- train(
+
+
+```{r}
+#ENTRENAMOS MODELO LOGISTIC REGRESSION
+ mod_LogitBoost <- train(
    train_data_eti~.,
   data = train_data,
-   tuneGrid = expand.grid(alpha = 0:1,
-                         lambda = seq(0.0001, 1, length = 20)),
-   method = "glmnet",
-   trControl = Control_class)
+   method = "LogitBoost",
+                  trControl = ctrl)
+save(mod_LogitBoost, file="mod_LogitBoost.RData")
+```
 
+
+
+```{r}
+#ENTRENAMOS MODELO RANDOM FOREST
+
+ mod_rf <- train(
+   train_data_eti~.,
+  data = train_data,
+   method = "rf",
+                  trControl = ctrl)
+save(mod_rf, file="mod_rf.RData")
+```
+
+
+```{r}
 #ENTRENAMOS MODELO GLMBOOST
  
 mod_glmboost <- train(   train_data_eti~.,
                             data = train_data,
-                             method = "glmboost", 
-                             trControl = Control_class)
+                             method = "glmboost",
+                  trControl = ctrl)
 
+save(mod_glmboost, file="mod_glmboost.RData")
+
+```
+
+```{r}
 #ENTRENAMOS MODELO RPART
-
 mod_rpart <- train(   train_data_eti~.,
                             data = train_data,
                              method = "rpart", 
-                             trControl = Control_class)
+                  trControl = ctrl)
 
-#ENTRENAMOS MODELO CTREE2
-
- mod_ctree2<- train(   train_data_eti~.,
-                            data = train_data,
-                             method = "ctree2", 
-                             trControl = Control_class)
-
- #ENTRENAMOS MODELO NAIVE BAYES
-
-mod_nb <- train(   train_data_eti~.,
-                            data = train_data,
-                             method = "naive_bayes", 
-                             trControl = Control_class)
-
-
-#ENTRENAMOS MODELO XGBTree - DE MOMENTO NO LO EJECUTAMOS
-#mod_xgbTree <- train(   train_data_eti~.,
-#                            data = train_data,
-#                             method = "xgbTree", 
-#                             trControl = Control_class)
-
-#ENTRENAMOS MODELO svmLinearWeights2 - DE MOMENTO NO LO EJECUTAMOS
-
-#mod_svmLinearWeights2 <- train(   train_data_eti~.,
-#                            data = train_data,
-#                             method = "svmLinearWeights2", 
-#                             trControl = Control_class)
-
-
-#ENTRENAMOS MODELO BSTTree- DE MOMENTO NO LO EJECUTAMOS
-
-#mod_bstTree <- train(   train_data_eti~.,
-#                            data = train_data,
-#                             method = "bstTree", 
-#                             trControl = Control_class)
- 
+save(mod_rpart, file="mod_rpart.RData")
 ```
 
 
+
+```{r}
+#ENTRENAMOS MODELO CTREE2
+mod_ctree2<- train(   train_data_eti~.,
+                            data = train_data,
+                             method = "ctree2",
+                  trControl = ctrl)
+
+save(mod_ctree2, file="mod_ctree2.RData")
+```
+
+```{r}
+ #ENTRENAMOS MODELO NAIVE BAYES
+mod_nb <- train(   train_data_eti~.,
+                            data = train_data,
+                             method = "naive_bayes",
+                  trControl = ctrl)
+
+save(mod_nb, file="mod_nb.RData")
+```
+
+
+
+```{r}
+#ENTRENAMOS MODELO XGBTree 
+mod_xgbTree <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+save(mod_xgbTree, file="mod_xgbTree.RData")
+```
+
+
+```{r}
+#ENTRENAMOS MODELO svmLinear2
+mod_svmLinear2 <- train(   train_data_eti~.,
+                          data = train_data,
+                            method = "svmLinear2", 
+                            trControl = ctrl)
+
+save(mod_svmLinear2, file="mod_svmLinear2.RData")
+```
+
+```{r}
+save(mod_rpart, file="mod_rpart.RData")
+save(mod_ctree2, file="mod_ctree2.RData")
+save(mod_nb, file="mod_nb.RData")
+save(mod_xgbTree, file="mod_xgbTree.RData")
+save(mod_svmLinear2, file="mod_svmLinear2.RData")
+```
+
+
+```{r}
+load("mod_rpart.RData")
+load("mod_ctree2.RData")
+load("mod_nb.RData")
+load("mod_xgbTree.RData")
+load("mod_svmLinear2.RData")
+load("mod_knn.RData")
+load("mod_glmboost.RData")
+load("mod_LogitBoost.RData")
+```
 
 
 Se irá añadiendo a una lista los distintos modelos que hemos ido entrenando y estos se pasarán por un remuestreo con la función resamples.
@@ -200,13 +295,13 @@ Se irá añadiendo a una lista los distintos modelos que hemos ido entrenando y 
 ```{r}
 Modelos_Entrenados <- list(
    knn = mod_knn,
-   glmnet = mod_glmnet_tuning,
    glmboost = mod_glmboost,
    rpart = mod_rpart,
    ctree2 = mod_ctree2,
-   naive_bayes = mod_nb
-   #xgbTree = mod_xgbTree,
-   #svmLinearWeights2 = mod_svmLinearWeights2,
+   naive_bayes = mod_nb,
+   xgbTree = mod_xgbTree,
+   svmLinear2 = mod_svmLinear2,
+   LogitBoost = mod_LogitBoost
    #bstTree = mod_bstTree
    )
 
@@ -224,8 +319,8 @@ knn_pred <- predict(mod_knn, test_data)
 postResample(pred = knn_pred, obs = test_data$test_data_eti)
 
 #Accuracy para modelo glmnet_tuning
-glmnet_tuning_pred <- predict(mod_glmnet_tuning, test_data)
-postResample(pred = glmnet_tuning_pred, obs = test_data$test_data_eti)
+#glmnet_tuning_pred <- predict(mod_glmnet_tuning, test_data)
+#postResample(pred = glmnet_tuning_pred, obs = test_data$test_data_eti)
 
 #Accuracy para modelo glmboost
 glmboost_pred <- predict(mod_glmboost, test_data)
@@ -243,8 +338,63 @@ postResample(pred = ctree2_pred, obs = test_data$test_data_eti)
 nb_pred <- predict(mod_nb, test_data)
 postResample(pred = nb_pred, obs = test_data$test_data_eti)
 
+#Accuracy para modelo xgbTree
+xgbTree_pred <- predict(mod_xgbTree, test_data)
+postResample(pred = xgbTree_pred , obs = test_data$test_data_eti)
 
+#Accuracy para modelo svmLinear
+svmLinear_pred <- predict(mod_svmLinear2, test_data)
+postResample(pred = svmLinear_pred , obs = test_data$test_data_eti)
+
+#Accuracy para modelo LogitBoost
+LogitBoost_pred <- predict(mod_LogitBoost, test_data)
+postResample(pred = LogitBoost_pred , obs = test_data$test_data_eti)
 ```
+
+
+
+```{r}
+
+#Confusion Matriz para modelo knn
+knn_pred <- predict(mod_knn, test_data)
+confusionMatrix(knn_pred ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo glmnet_tuning
+#glmnet_tuning_pred <- predict(mod_glmnet_tuning, test_data)
+#confusionMatrix(glmnet_tuning_pred ,test_data$test_data_eti)
+
+#Confusion Matriz para modelo glmboost
+glmboost_pred <- predict(mod_glmboost, test_data)
+confusionMatrix(glmboost_pred ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo rpart
+rpart_pred <- predict(mod_rpart, test_data)
+confusionMatrix(rpart_pred ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo ctree2
+ctree2_pred <- predict(mod_ctree2, test_data)
+confusionMatrix(ctree2_pred ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo naive bayes
+nb_pred <- predict(mod_nb, test_data)
+confusionMatrix(nb_pred  ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo xgbTree
+xgbTree_pred <- predict(mod_xgbTree, test_data)
+confusionMatrix(xgbTree_pred  ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo svmLinear2
+svmLinear2_pred <- predict(mod_svmLinear2, test_data)
+confusionMatrix(svmLinear2_pred  ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo LogitBoost
+LogitBoost_pred <- predict(mod_LogitBoost, test_data)
+confusionMatrix(LogitBoost_pred  ,test_data$test_data_eti,mode="everything")
+```
+
+
+
+
 Mostramos gráficamente los modelos y los compararemos para ver de manera visual cual es el mejor modelo de predicción temprana de sepsis para este conjunto de datos. Con el siguiente código mostraremos el área bajo la curva ROC, la sensibilidiad y la especificidad.
 
 ```{r}
@@ -252,6 +402,52 @@ Mostramos gráficamente los modelos y los compararemos para ver de manera visual
 summary(resamples)
 bwplot(resamples)
 dotplot(resamples)
-
-
 ```
+
+Calculamos AUPRC
+
+```{r}
+calc_auprc <- function(model, data){
+  
+  index_class2 <- data$train_data_eti == "SI"
+  index_class1 <- data$train_data_eti == "NO"
+  
+  predictions <- predict(model, data, type = "prob")
+  
+  pr.curve(predictions$SI[index_class2], predictions$SI[index_class1], curve = TRUE)
+  
+}
+```
+
+```{r}
+model_list_pr <- Modelos_Entrenados %>%
+  map(calc_auprc, data = train_data)
+model_list_pr %>%
+  map(function(the_mod) the_mod$auc.integral)
+```
+Mostramos gráficamos los resultamos de AUPRC para los distintos modelos
+
+```{r}
+
+results_list_pr <- list(NA)
+num_mod <- 1
+for(the_pr in model_list_pr){
+  
+  results_list_pr[[num_mod]] <- data_frame(recall = the_pr$curve[, 1],
+                                           precision = the_pr$curve[, 2],
+                                           model = names(model_list_pr)[num_mod])
+  
+  num_mod <- num_mod + 1
+  
+}
+results_df_pr <- bind_rows(results_list_pr)
+custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00","#CC79A7","#CCBB79","#AB0A28","#7FCC79")
+ggplot(aes(x = recall, y = precision, group = model), data = results_df_pr) +
+  geom_line(aes(color = model), size = 1) +
+  scale_color_manual(values = custom_col) +
+  geom_abline(intercept = sum(test_data$Class == "Class2")/nrow(test_data),
+              slope = 0, color = "gray", size = 1) +
+  theme_bw()
+```
+
+
