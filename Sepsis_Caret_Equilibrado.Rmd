@@ -1,0 +1,278 @@
+---
+title: "Entrenamiento con datos balanceados"
+author: "David del Pozo Granados"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float:
+      collapsed: no
+    number_sections: yes
+    theme: cosmo
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(dplyr) # for data manipulation
+library(caret) # for model-building
+library(purrr) # for functional programming (map)
+library(pROC) # for AUC calculations
+library(PRROC) # for Precision-Recall curve calculations
+library(DMwR)
+```
+
+```{r}
+library(MLeval)
+```
+
+
+```{r}
+
+test_data <- read.csv("csv_data_24h/test_data_24h.csv")
+train_data <- read.csv("csv_data_24h/train_data_24h.csv")
+val_data <- read.csv("csv_data_24h/val_data_24h.csv")
+
+```
+
+```{r}
+train_data$train_data_eti = as.factor(train_data$train_data_eti)
+```
+
+```{r}
+test_data$test_data_eti = as.factor(test_data$test_data_eti)
+```
+
+```{r}
+smote_train_data <- SMOTE(train_data_eti~ ., train_data, perc.over = 500, perc.under = 100)
+```
+
+```{r}
+table(smote_train_data$train_data_eti)
+
+prop.table(table(smote_train_data$train_data_eti))
+```
+
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+```
+
+```{r}
+ #ENTRENAMOS MODELO NAIVE BAYES
+mod_nb_smote <- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "naive_bayes",
+                          tuneGrid = expand.grid(laplace=0,usekernel=TRUE,adjust=1),
+                  trControl = ctrl)
+
+save(mod_nb_smote, file="Modelos_Entrenamiento_Smote/mod_nb_smote.RData")
+```
+
+
+```{r}
+#ENTRENAMOS MODELO XGBTree 
+mod_xgbTree_smote <- train(   train_data_eti~.,
+                            data = smote_train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 2 ,
+                          eta = 0.3,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 0.8,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+save(mod_xgbTree_smote, file="Modelos_Entrenamiento_Smote/mod_xgbTree_smote.RData")
+```
+
+```{r}
+#ENTRENAMOS MODELO CTREE2
+mod_ctree2_smote<- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "ctree2",
+                           tuneGrid = expand.grid(maxdepth=10,mincriterion=0.5),
+                  trControl = ctrl)
+
+save(mod_ctree2_smote, file="Modelos_Entrenamiento_Smote/mod_ctree2_smote.RData")
+```
+
+```{r}
+#ENTRENAMOS MODELO RPART
+mod_rpart_smote<- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "rpart",
+                           tuneGrid = expand.grid(cp=0.0216),
+                  trControl = ctrl)
+
+save(mod_rpart_smote, file="Modelos_Entrenamiento_Smote/mod_rpart_smote.RData")
+```
+
+```{r}
+#ENTRENAMOS MODELO LogitBoost
+mod_LogitBoost_smote<- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "LogitBoost",
+                           tuneGrid = expand.grid(nIter=21),
+                  trControl = ctrl)
+
+save(mod_LogitBoost_smote, file="Modelos_Entrenamiento_Smote/mod_LogitBoost_smote.RData")
+```
+
+```{r}
+#ENTRENAMOS MODELO glmboost
+mod_glmboost_smote<- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "glmboost",
+                           tuneGrid = expand.grid(mstop=150,prune='no'),
+                  trControl = ctrl)
+
+save(mod_glmboost_smote, file="Modelos_Entrenamiento_Smote/mod_glmboost_smote.RData")
+```
+
+
+```{r}
+#ENTRENAMOS MODELO knn
+mod_knn_smote<- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "knn",
+                           tuneGrid = expand.grid(k=9),
+                  trControl = ctrl)
+
+save(mod_knn_smote, file="Modelos_Entrenamiento_Smote/mod_knn_smote.RData")
+```
+
+```{r}
+#ENTRENAMOS MODELO svmLinear2
+mod_svmLinear2_smote<- train(   train_data_eti~.,
+                            data = smote_train_data,
+                             method = "svmLinear2",
+                           tuneGrid = expand.grid(cost=0.25),
+                  trControl = ctrl)
+
+save(mod_svmLinear2_smote, file="Modelos_Entrenamiento_Smote/mod_svmLinear2_smote.RData")
+```
+
+```{r}
+#Confusion Matriz para modelo knn
+knn_pred_smote <- predict(mod_knn_smote, test_data)
+confusionMatrix(knn_pred_smote ,test_data$test_data_eti,mode="everything")
+
+
+#Confusion Matriz para modelo rpart
+rpart_pred_smote <- predict(mod_rpart_smote, test_data)
+confusionMatrix(rpart_pred_smote ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo naive bayes
+nb_pred_smote <- predict(mod_nb_smote, test_data)
+confusionMatrix(nb_pred_smote  ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo LogitBoost
+LogitBoost_pred_smote <- predict(mod_LogitBoost_smote, test_data)
+confusionMatrix(LogitBoost_pred_smote  ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo xgbTree
+xgbTree_pred_smote <- predict(mod_xgbTree_smote, test_data)
+confusionMatrix(xgbTree_pred_smote  ,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo ctree2_
+ctree2_pred_smote <- predict(mod_ctree2_smote, test_data)
+confusionMatrix(ctree2_pred_smote,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo glmboost
+glmboost_pred_smote <- predict(mod_glmboost_smote, test_data)
+confusionMatrix(glmboost_pred_smote,test_data$test_data_eti,mode="everything")
+
+#Confusion Matriz para modelo svmLinear2
+svmLinear2_pred_smote <- predict(mod_svmLinear2_smote, test_data)
+confusionMatrix(svmLinear2_pred_smote,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+Modelos_Entrenados_smote <- list(
+   xgbTree_smote = mod_xgbTree_smote,
+   nb_smote = mod_nb_smote,
+   knn_smote = mod_knn_smote,
+   LogitBoost_smote = mod_LogitBoost_smote,
+   glmboost_smote = mod_glmboost_smote,
+   rpart_amote = mod_rpart_smote,
+   ctree2_smote = mod_ctree2_smote,
+   svmLinear2_smote = mod_svmLinear2_smote
+   )
+
+
+resamples_smote <- resamples(Modelos_Entrenados_smote)
+
+```
+
+
+```{r}
+roc(smote_train_data$train_data_eti,xgbTree_pred_smote)
+
+```
+
+
+```{r}
+summary(resamples_smote)
+bwplot(resamples_smote)
+dotplot(resamples_smote)
+```
+
+
+```{r}
+calc_auprc <- function(model, data){
+  
+  index_class2 <- data$train_data_eti == "SI"
+  index_class1 <- data$train_data_eti == "NO"
+  
+  predictions <- predict(model, data, type = "prob")
+  
+  pr.curve(predictions$SI[index_class2], predictions$SI[index_class1], curve = TRUE)
+  
+}
+```
+
+```{r}
+model_list_pr <- Modelos_Entrenados_smote  %>%
+  map(calc_auprc, data = train_data)
+model_list_pr %>%
+  map(function(the_mod) the_mod$auc.integral)
+```
+
+```{r}
+
+results_list_pr <- list(NA)
+num_mod <- 1
+for(the_pr in model_list_pr){
+  
+  results_list_pr[[num_mod]] <- data_frame(recall = the_pr$curve[, 1],
+                                           precision = the_pr$curve[, 2],
+                                           model = names(model_list_pr)[num_mod])
+  
+  num_mod <- num_mod + 1
+  
+}
+results_df_pr <- bind_rows(results_list_pr)
+custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00","#CC79A7","#CCBB79","#AB0A28","#7FCC79")
+#custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00","#AB0A28","#CCBB79")
+#custom_col <- c( "#0072B2", "#D55E00")
+ggplot(aes(x = recall, y = precision, group = model), data = results_df_pr) +
+  geom_line(aes(color = model), size = 1) +
+  scale_color_manual(values = custom_col) +
+  geom_abline(intercept = sum(test_data$Class == "Class2")/nrow(test_data),
+              slope = 0, color = "gray", size = 1) +
+  theme_bw()
+```

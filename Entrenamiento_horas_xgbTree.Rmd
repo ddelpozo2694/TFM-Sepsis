@@ -1,0 +1,619 @@
+---
+title: "Entrenamiento en ventana de horas para modelo xgbTree"
+author: "David del Pozo Granados"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float:
+      collapsed: no
+    number_sections: yes
+    theme: cosmo
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(dplyr) # for data manipulation
+library(caret) # for model-building
+library(purrr) # for functional programming (map)
+library(pROC) # for AUC calculations
+library(PRROC) # for Precision-Recall curve calculations
+library(DMwR)
+```
+
+```{r}
+
+test_data <- read.csv("csv_data/linear_interpolation/test_data_ML.csv")
+test_data <- test_data[,-1]
+train_data <- read.csv("csv_data/linear_interpolation/train_data_ML.csv")
+train_data <- train_data[,-1]
+val_data <- read.csv("csv_data/linear_interpolation/val_data_ML.csv")
+val_data <- val_data[,-1]
+
+
+test_data_eti <- read.csv("csv_data/linear_interpolation/test_data_etiqueta.csv")
+test_data_eti <- test_data_eti[,-1]
+train_data_eti <- read.csv("csv_data/linear_interpolation/train_data_etiqueta.csv")
+train_data_eti <- train_data_eti[,-1]
+val_data_eti <- read.csv("csv_data/linear_interpolation/val_data_etiqueta.csv")
+val_data_eti <- val_data_eti[,-1]
+```
+
+En este procesamiento elegimos el subconjunto de datos que queremos usar en función del número de horas. Si elegimos por ejemplo 3 horas, tendremos 4 tomas de datos para cada una de las 44 medidas (3 horas + onset)
+
+```{r}
+
+n_horas <- 24 #Elegimos el número de horas antes de onset que elegimos.
+valores <- c()
+i<-1
+
+while(i<=44){
+  valores_aux <- c((i*49-n_horas):(i*49))
+  valores <- c(valores,valores_aux)
+  valores_aux <- c()
+  i <- i+1
+}
+```
+
+```{r}
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+```
+
+
+
+```{r}
+
+test_data_ini <- test_data
+train_data_ini <- train_data
+val_data_ini <- val_data
+
+```
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+```
+
+
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-1))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_1_hora <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_1_hora, file="Modelos_xgbTree/xgbTree_1_hora.RData")
+
+train_data_1_hora <- train_data
+  
+xgbTree_1_hora_pred <- predict(xgbTree_1_hora, test_data)
+confusionMatrix(xgbTree_1_hora_pred ,test_data$test_data_eti,mode="everything")
+  
+
+```
+
+
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-2))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_2_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_2_horas, file="Modelos_xgbTree/xgbTree_2_horas.RData")
+  
+ train_data_2_horas <- train_data
+  
+xgbTree_2_horas_pred <- predict(xgbTree_2_horas, test_data)
+confusionMatrix(xgbTree_2_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-3))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_3_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_3_horas, file="Modelos_xgbTree/xgbTree_3_horas.RData")
+
+   train_data_3_horas <- train_data
+  
+xgbTree_3_horas_pred <- predict(xgbTree_3_horas, test_data)
+confusionMatrix(xgbTree_3_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-4))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_4_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_4_horas, file="Modelos_xgbTree/xgbTree_4_horas.RData")
+  
+   train_data_4_horas <- train_data
+  
+xgbTree_4_horas_pred <- predict(xgbTree_4_horas, test_data)
+confusionMatrix(xgbTree_4_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-5))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_5_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_5_horas, file="Modelos_xgbTree/xgbTree_5_horas.RData")
+  #xgbTree_pred <- predict(nom_modelo, test_data)
+  #confusionMatrix(xgbTree_pred ,test_data$test_data_eti,mode="everything")
+  
+   train_data_5_horas <- train_data
+  
+xgbTree_5_horas_pred <- predict(xgbTree_5_horas, test_data)
+confusionMatrix(xgbTree_5_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-6))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_6_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_6_horas, file="Modelos_xgbTree/xgbTree_6_horas.RData")
+  
+
+   train_data_6_horas <- train_data
+  
+xgbTree_6_horas_pred <- predict(xgbTree_6_horas, test_data)
+confusionMatrix(xgbTree_6_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-7))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_7_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_7_horas, file="Modelos_xgbTree/xgbTree_7_horas.RData")
+
+  
+   train_data_7_horas <- train_data
+  
+xgbTree_7_horas_pred <- predict(xgbTree_7_horas, test_data)
+confusionMatrix(xgbTree_7_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+```{r}
+valores <- c()
+j<-0
+  
+test_data <- test_data_ini
+train_data <- train_data_ini
+val_data <- val_data_ini
+
+  while(j<44){
+    valores_aux <- c((j*25+1):((j+1)*25-8))
+    valores <- c(valores,valores_aux)
+    valores_aux <- c()
+    j <- j+1
+  }
+  
+  
+test_data <- test_data[,valores]
+train_data <- train_data[,valores]
+val_data <- val_data[,valores]
+  
+train_data<- cbind(train_data,train_data_eti)
+test_data<- cbind(test_data,test_data_eti)
+val_data<- cbind(val_data,val_data_eti)
+
+test_data$test_data_eti<- factor(test_data$test_data_eti, levels=c(1,0),labels=c("SI","NO"))
+train_data$train_data_eti<-factor(train_data$train_data_eti, levels=c(1,0),labels=c("SI","NO"))
+val_data$val_data_eti<- factor(val_data$val_data_eti, levels=c(1,0),labels=c("SI","NO"))
+
+
+  #ENTRENAMOS MODELO XGBTree 
+  
+  xgbTree_8_horas <- train(   train_data_eti~.,
+                            data = train_data,
+                            method = "xgbTree",
+                            tuneGrid = expand.grid(max_depth = 1 ,
+                          eta = 0.5,
+                          nrounds=100,
+                          gamma = 0,
+                          colsample_bytree= 1,
+                          min_child_weight = 1,
+                          subsample = 1),
+                         trControl = ctrl,
+                         verbose = FALSE,
+                         verbosity = 0)
+
+  save(xgbTree_8_horas, file="Modelos_xgbTree/xgbTree_8_horas.RData")
+
+     train_data_8_horas <- train_data
+  
+xgbTree_8_horas_pred <- predict(xgbTree_8_horas, test_data)
+confusionMatrix(xgbTree_8_horas_pred ,test_data$test_data_eti,mode="everything")
+```
+
+
+```{r}
+Modelos_xgbTree <- list(
+   xgbTree_1_hora = xgbTree_1_hora,
+   xgbTree_2_horas = xgbTree_2_horas,
+   xgbTree_3_horas = xgbTree_3_horas,
+   xgbTree_4_horas = xgbTree_4_horas,
+   xgbTree_5_horas = xgbTree_5_horas,
+   xgbTree_6_horas = xgbTree_6_horas,
+   xgbTree_7_horas = xgbTree_7_horas,
+   xgbTree_8_horas = xgbTree_8_horas
+   )
+
+
+resamples <- resamples(Modelos_xgbTree)
+
+train_data_set <- list(
+   train_data_1_hora = train_data_1_hora,
+   train_data_2_horas = train_data_2_horas,
+   train_data_3_horas = train_data_3_horas,
+   train_data_4_horas = train_data_4_horas,
+   train_data_5_horas = train_data_5_horas,
+   train_data_6_horas = train_data_6_horas,
+   train_data_7_horas = train_data_7_horas,
+   train_data_8_horas = train_data_8_horas
+   )
+```
+
+```{r}
+
+summary(resamples)
+bwplot(resamples)
+dotplot(resamples)
+
+
+```
+
+
+```{r}
+calc_auprc <- function(model, data){
+  
+  index_class2 <- data$train_data_eti == "SI"
+  index_class1 <- data$train_data_eti == "NO"
+  
+  predictions <- predict(model, data, type = "prob")
+  
+  pr.curve(predictions$SI[index_class2], predictions$SI[index_class1], curve = TRUE)
+  
+}
+```
+
+
+
+```{r}
+model_list_pr <- Modelos_xgbTree   %>%
+  map(calc_auprc, data = train_data_1_hora)
+model_list_pr %>%
+  map(function(the_mod) the_mod$auc.integral)
+
+```
+
+
+Mostramos gráficamos los resultamos de AUPRC para los distintos modelos
+
+```{r}
+
+results_list_pr <- list(NA)
+num_mod <- 1
+for(the_pr in model_list_pr){
+  
+  results_list_pr[[num_mod]] <- data_frame(recall = the_pr$curve[, 1],
+                                           precision = the_pr$curve[, 2],
+                                           model = names(model_list_pr)[num_mod])
+  
+  num_mod <- num_mod + 1
+  
+}
+results_df_pr <- bind_rows(results_list_pr)
+custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00","#CC79A7","#CCBB79","#AB0A28","#7FCC79")
+#custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00","#AB0A28")
+
+ggplot(aes(x = recall, y = precision, group = model), data = results_df_pr) +
+  geom_line(aes(color = model), size = 1) +
+  scale_color_manual(values = custom_col) +
+  geom_abline(intercept = sum(test_data$Class == "Class2")/nrow(test_data),
+              slope = 0, color = "gray", size = 1) +
+  theme_bw()
+```
+
+
+```{r}
+auprc <- sapply(model_list_pr, function(x) x[2])
+Horas <- list(1, 2, 3, 4, 5, 6, 7, 8)
+plot(Horas,auprc,xlab="Horas previas a onset",ylab="AUPRC",main="Resultados AUPRC en ventana de horas con algoritmo xgbTree",col="red",type='o')
+```
+
+
